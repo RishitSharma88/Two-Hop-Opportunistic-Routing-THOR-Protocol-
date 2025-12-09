@@ -142,7 +142,9 @@ All routing stages successfully simulated.
   This means:
   
 	•	Nodes that previously delivered packets successfully get a boost
+
 	•	Over time, THOR stops using bad routes naturally
+
 	•	This evolves into a reinforcement-learning routing protocol
 
 * Duplicate Packet Suppression:
