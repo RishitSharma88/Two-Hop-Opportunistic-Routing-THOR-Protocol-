@@ -119,8 +119,6 @@
             // Update the HEADER with the route
             header.nextHopId = bestHop; 
             header.flagsAndTTL.visited = 1;
-            
-            // Assign to packet NOW (after updates)
             packet.header = header; 
             packet.payload = payload;
             
@@ -128,7 +126,6 @@
         } 
         else {
             // --- NO PATH (Store and Forward) ---
-            // Even if we queue it, we should save the header state
             packet.header = header;
             packet.payload = payload;
     
