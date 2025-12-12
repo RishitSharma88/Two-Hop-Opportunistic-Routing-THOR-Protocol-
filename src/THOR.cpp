@@ -94,20 +94,49 @@
         return DeserializeHeader(data,outheader);
     }
     
-    std::vector<uint8_t> THOR::SendPacket(uint32_t DestId, uint32_t SenderId, uint32_t OriginId, uint32_t NextHopId, uint32_t Sequence, const std::vector<uint8_t>& payload)
+    std::vector<uint8_t> THOR::SendPacket(uint32_t DestId, uint32_t SenderId, uint32_t OriginId, uint32_t Sequence, const std::vector<uint8_t>& payload)
     {
         Header header = {};
         Packet packet = {};
-        header.senderId = SenderId;//My ID
+        
+        // 1. Setup Basic Info
+        header.senderId = SenderId;
         header.destinationId = DestId;
         header.originId = OriginId;
-        header.nextHopId = NextHopId;//header.senderId in the HELLO Packet
-        header.sequence = Sequence;//HELLO sequence + 1
+        header.sequence = Sequence;
         header.flagsAndTTL.ttl = 15;
         header.type = THORPacketType::DATA;
-        packet.header = header;
-        packet.payload = payload;
-        return Serialize(packet);
+        header.nextHopId = 0; // Default to 0
+        header.flagsAndTTL.visited = 0;
+    
+        // 2. Routing Decision
+        uint32_t bestHop = GetBestNextHop(); //
+    
+        if (bestHop != 0) {
+            // --- PATH FOUND ---
+            neighborTable[bestHop].isVisited = true;
+            
+            // Update the HEADER with the route
+            header.nextHopId = bestHop; 
+            header.flagsAndTTL.visited = 1;
+            
+            // Assign to packet NOW (after updates)
+            packet.header = header; 
+            packet.payload = payload;
+            
+            return Serialize(packet); // Send immediately
+        } 
+        else {
+            // --- NO PATH (Store and Forward) ---
+            // Even if we queue it, we should save the header state
+            packet.header = header;
+            packet.payload = payload;
+    
+            if (packetQueue.size() < 50) {
+                packetQueue.push_back(packet);
+            }
+            return {}; // Return empty -> Stored for later.
+        }
     }
     
     // Returns a Packet if we need to forward it, or an empty vector if dropped/queued/delivered.
