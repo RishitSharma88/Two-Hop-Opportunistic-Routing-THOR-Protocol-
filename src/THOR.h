@@ -61,7 +61,7 @@ public:
     std::vector<uint8_t> CreateACK(uint32_t DestId, uint32_t SenderId,uint32_t OriginId,uint32_t NextHopId,uint32_t Sequence, bool myinternet, bool intneighbour);
     bool HandleHello(const std::vector<uint8_t>& data, Header& outheader);
     bool HandleAck(const std::vector<uint8_t>& data, Header& outheader);
-    std::vector<uint8_t> SendPacket(uint32_t DestId, uint32_t SenderId, uint32_t OriginId, uint32_t NextHopId, uint32_t Sequence, const std::vector<uint8_t>& payload);
+    std::vector<uint8_t> SendPacket(uint32_t DestId, uint32_t SenderId, uint32_t OriginId, uint32_t Sequence, const std::vector<uint8_t>& payload);
     std::vector<uint8_t> HandleData(const std::vector<uint8_t>& data, Packet& outPacket, uint32_t MyNodeId); 
     void NeighborStore(uint32_t nodeId, int rssi, bool hasInternetDirect, bool hasInternetIndirect, bool isVisited);
     void RemoveOld();
