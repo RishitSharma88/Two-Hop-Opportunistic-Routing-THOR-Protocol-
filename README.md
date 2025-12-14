@@ -149,6 +149,11 @@ All routing stages successfully simulated.
 
 * Duplicate Packet Suppression:
   A key improvement needed in THOR is a mechanism to detect and drop duplicate packets. In dynamic or dense networks, the same packet may arrive multiple times due to mobility or overlapping transmission ranges. Without suppression, THOR may forward these duplicates repeatedly, causing unnecessary congestion, battery drain, and temporary routing loops. Future versions will incorporate a lightweight “recent packet history” that allows each node to recognize and discard previously seen packets, ensuring cleaner routing behavior and improved network stability.
+
+## NOTE:
+
+THOR v1 assumes homogeneous architecture and compiler across all nodes.
+Wire format is not guaranteed to be portable across heterogeneous systems.
   
 ## License
 
