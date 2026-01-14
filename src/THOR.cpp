@@ -4,6 +4,57 @@
 # include "THOR.h"
 #include <cstring>
 
+    void THOR::InitConfig()
+    {
+        // 0 = Android, 1 = ESP32
+        uint16_t mtuCap = 0;
+
+        if (cfg.deviceType == 1) {
+            // ESP32
+            mtuCap = 185;
+        } else {
+            // Android (default)
+            mtuCap = 247; // safe upper bound for cross-device reliability
+        }
+
+        // 1) Clamp MTU
+        cfg.attMtu = std::min<uint16_t>(cfg.attMtu, mtuCap);
+
+        // 2) Compute max payload
+        if (cfg.attMtu <= (attOverhead + headerSize)) {
+            cfg.maxPayload = 0;
+            cfg.fragPayloadSize = 0;
+            return;
+        }
+
+        cfg.maxPayload = cfg.attMtu - attOverhead - headerSize;
+
+        // 3) Fragment payload size
+        cfg.fragPayloadSize = cfg.maxPayload;
+
+        // 4) Safety cap
+        if (cfg.maxFragments == 0) cfg.maxFragments = 32;
+
+        // 5) Compute TempId from internet state
+        cfg.TempId = CreateTempId();
+    }
+    uint32_t THOR::CreateTempId() //Ensure BLE device wrapper gives 0 as LSB of the PermNodeId always (Use Error checks)
+    {
+        if(cfg.myInternet)
+        {
+            return cfg.PermId|1;
+        }
+        else
+        {
+            return cfg.PermId & ~1u ;
+        }
+    }
+        
+    uint32_t THOR::ParseTempId() //Return back to the permanent Id stored in the BLE device
+    {
+        return cfg.TempId & ~1u;
+    }
+    
     std::vector<uint8_t> THOR::Serialize(const Packet& packet) 
     {
         std::vector<uint8_t> buffer;
@@ -11,7 +62,6 @@
         const uint8_t* headerPtr    = reinterpret_cast<const uint8_t*>(&packet.header);
         buffer.insert(buffer.end(), headerPtr, headerPtr + sizeof(Header));
         buffer.insert(buffer.end(), packet.payload.begin(), packet.payload.end());
-
         return buffer;
     }
     
@@ -53,6 +103,8 @@
     
     std::vector<uint8_t> THOR::CreateHello(uint32_t DestId ,uint32_t SenderId, uint32_t OriginId, uint32_t Sequence)
     {
+        if(SenderId == OriginId)
+        {Sequence = 0;}
         Header header = {};
 
         header.senderId = SenderId;
@@ -63,12 +115,11 @@
         header.type = THORPacketType::HELLO;
         header.flagsAndTTL.ttl = 1;
         header.flagsAndTTL.visited = 0;
-        header.flagsAndTTL.myInternet = 0;
         header.flagsAndTTL.intneighbour = 0;
         return SerializeHeader(header);
     }
     
-    std::vector<uint8_t> THOR::CreateACK(uint32_t DestId, uint32_t SenderId,uint32_t OriginId,uint32_t NextHopId,uint32_t Sequence, bool myinternet, bool intneighbour)
+    std::vector<uint8_t> THOR::CreateACK(uint32_t DestId, uint32_t SenderId,uint32_t OriginId,uint32_t NextHopId,uint32_t Sequence, bool intneighbour,bool successACK)
     {
         Header header = {};
         header.senderId = SenderId;//My ID
@@ -80,18 +131,74 @@
         header.flagsAndTTL.visited = 0;
         header.type = THORPacketType::ACK;
         header.flagsAndTTL.intneighbour = intneighbour ? 1 : 0;
-        header.flagsAndTTL.myInternet = myinternet ? 1 : 0;
         return SerializeHeader(header); 
     }
     
-    bool THOR::HandleHello(const std::vector<uint8_t>& data, Header& outheader)
+    bool THOR::HandleHello(const std::vector<uint8_t>& data)//Endpoint call
     {
-        return DeserializeHeader(data, outheader);
+        Header outheader;
+        if(!transaction)
+        {
+            transaction = true;
+            bool result = DeserializeHeader(data, outheader);
+            auto &n = neighborTable[outheader.senderId];
+            n.lastSeen = std::time(nullptr);
+            n.lock = true;
+            OutHeader oh;
+            oh.DestId = outheader.destinationId;
+            oh.OriginId = outheader.originId;
+            oh.sequence = outheader.sequence;
+            oh.SenderId = outheader.senderId;
+            outheaderFields.push(oh);
+            return result;
+        }
+        else
+        {return false;}
+    }
+    //Process hello packets to find neighbors
+    std::vector<uint8_t> THOR::ACK(uint32_t MyId,bool intneighbour)//Endpoint call
+    {
+        OutHeader oh;
+        oh = outheaderFields.front();
+        outheaderFields.pop();
+        if(MyId == oh.DestId)
+        {
+            return CreateACK(oh.DestId,MyId,oh.OriginId,oh.SenderId,oh.sequence,intneighbour,1);
+        }
+        else
+        {
+            return CreateACK(oh.DestId,MyId,oh.OriginId,oh.SenderId,oh.sequence,intneighbour,0);
+        }
     }
     
-    bool THOR::HandleAck(const std::vector<uint8_t>& data, Header& outheader)
+    void THOR::ProcessACK(Header outheader)
     {
-        return DeserializeHeader(data,outheader);
+        auto &n = neighborTable[outheader.senderId];
+        if(outheader.type == THORPacketType::ACK && outheader.flagsAndTTL.moreData == 1)
+        {
+            n.lock = false;
+            transaction = false;
+        }
+        else
+        {
+            n.lastSeen = std::time(nullptr);
+            n.hasInternetDirect = outheader.senderId & 1 ? true : false;
+            OutHeader oh;
+            oh.DestId = outheader.destinationId;
+            oh.OriginId = outheader.originId;
+            oh.sequence = outheader.sequence;
+            oh.SenderId = outheader.senderId;
+            outheaderFields.push(oh);
+        }
+    }
+    
+    //store ACKs in the queue and pop elements for single threaded function HandleAck
+    bool THOR::HandleAck(const std::vector<uint8_t>& data)//Endpoint call
+    {
+        Header outheader;
+        bool result =  DeserializeHeader(data,outheader);
+        ProcessACK(outheader);
+        return result;
     }
     
     std::vector<uint8_t> THOR::SendPacket(uint32_t DestId, uint32_t SenderId, uint32_t OriginId, uint32_t Sequence, const std::vector<uint8_t>& payload)
@@ -110,7 +217,7 @@
         header.flagsAndTTL.visited = 0;
     
         // 2. Routing Decision
-        uint32_t bestHop = GetBestNextHop(); //
+        uint32_t bestHop = GetBestNextHop();
     
         if (bestHop != 0) {
             // --- PATH FOUND ---
@@ -141,6 +248,7 @@
     {
         if (!Deserialize(data, outPacket)) return {};
 
+
         if (outPacket.header.flagsAndTTL.ttl <= 1) {
             return {};
         }
@@ -164,23 +272,13 @@
             return Serialize(outPacket); // Return bytes to send immediately
         } 
         else {
-            // 7. No neighbors -> Fail Gracefully (Store in Queue)
+            // 7. No neighbors -> Fail (Store in Queue)
             // Check if queue is full to prevent memory leaks
             if (packetQueue.size() < 50) {
                 packetQueue.push_back(outPacket);
             }
             return {}; // Return empty -> Stored for later.
         }
-    }
-    
-    void THOR::NeighborStore(uint32_t nodeId, int rssi, bool hasInternetDirect, bool hasInternetIndirect, bool isVisited)
-    {
-        NeighborInfo& info = neighborTable[nodeId];
-        info.lastSeen = std::time(nullptr);
-        info.rssi = rssi;
-        info.hasInternetDirect = hasInternetDirect;
-        info.hasInternetIndirect = hasInternetIndirect;
-        info.isVisited = isVisited;
     }
     
     void THOR::RemoveOld()
@@ -190,7 +288,7 @@
         auto it = neighborTable.begin();
 
         while (it != neighborTable.end()) {
-            NeighborInfo& info = it->second; // Standard syntax (No warnings)
+            NeighborInfo& info = it->second;
 
             if (std::difftime(now, info.lastSeen) > 30.0) {
                 it = neighborTable.erase(it);
@@ -205,43 +303,47 @@
         uint32_t bestNodeId = 0;
         int maxScore = -1; 
         if (neighborTable.empty()) return 0;
-        for (auto const& entry : neighborTable) {
+        for (auto const& entry : neighborTable) 
+        {
+            if (!entry.second.lock)
+            {
             
-            uint32_t id = entry.first;
-            const NeighborInfo& info = entry.second;
+                uint32_t id = entry.first;
+                const NeighborInfo& info = entry.second;
 
-            int currentScore = 0;
+                int currentScore = 0;
 
-            // --- PRIORITY 1: DIRECT INTERNET  ---
-            if (info.hasInternetDirect) {
-                currentScore = 300; 
-            }
-            // --- PRIORITY 2: INDIRECT INTERNET  ---
-            else if (info.hasInternetIndirect) {
-                currentScore = 200; 
-            }
-            // --- PRIORITY 3: EXPLORATION  ---
-            else {
-                if (info.isVisited) {
-                    currentScore = 10;
-                } else {
-                    currentScore = 100;
+                // --- PRIORITY 1: DIRECT INTERNET  ---
+                if (info.hasInternetDirect) {
+                    currentScore = 300; 
                 }
-            }
-            
-            if (info.rssi > -50) {
-                currentScore -= 50;
-            }
+                // --- PRIORITY 2: INDIRECT INTERNET  ---
+                else if (info.hasInternetIndirect) {
+                    currentScore = 200; 
+                }
+                // --- PRIORITY 3: EXPLORATION  ---
+                else {
+                    if (info.isVisited) {
+                        currentScore = 10;
+                    } else {
+                        currentScore = 100;
+                    }
+                }
 
-            else if (info.rssi <= -50 && info.rssi >= -80) {
-                currentScore += 50;
-            }
-            else {
-                 currentScore -= 20;
-            }
-            if (currentScore > maxScore) {
-                maxScore = currentScore;
-                bestNodeId = id;
+                if (info.rssi > -50) {
+                    currentScore -= 50;
+                }
+
+                else if (info.rssi <= -50 && info.rssi >= -80) {
+                    currentScore += 50;
+                }
+                else {
+                     currentScore -= 20;
+                }
+                if (currentScore > maxScore) {
+                    maxScore = currentScore;
+                    bestNodeId = id;
+                }
             }
         }
         return (maxScore == -1) ? 0 : bestNodeId;
