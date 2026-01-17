@@ -113,9 +113,9 @@
         header.nextHopId = BROADCAST_ID; // 0xFFFFFFFF
         header.sequence = Sequence;
         header.type = THORPacketType::HELLO;
-        header.flagsAndTTL.ttl = 1;
-        header.flagsAndTTL.visited = 0;
-        header.flagsAndTTL.intneighbour = 0;
+        header.flagsAndTTL.setTTL(1);
+        header.flagsAndTTL.setVisited(false);
+        header.flagsAndTTL.setIntNeighbour(false);
         return SerializeHeader(header);
     }
     
@@ -127,10 +127,10 @@
         header.originId = OriginId;
         header.nextHopId = NextHopId;//header.senderId in the HELLO Packet
         header.sequence = Sequence;//HELLO sequence + 1
-        header.flagsAndTTL.ttl = 1;
-        header.flagsAndTTL.visited = 0;
+        header.flagsAndTTL.setTTL(1);
+        header.flagsAndTTL.setVisited(false);
         header.type = THORPacketType::ACK;
-        header.flagsAndTTL.intneighbour = intneighbour ? 1 : 0;
+        header.flagsAndTTL.setIntNeighbour(cfg.intneighbour);
         return SerializeHeader(header); 
     }
     
@@ -174,7 +174,7 @@
     void THOR::ProcessACK(Header outheader)
     {
         auto &n = neighborTable[outheader.senderId];
-        if(outheader.type == THORPacketType::ACK && outheader.flagsAndTTL.moreData == 1)
+        if(outheader.type == THORPacketType::ACK && outheader.flagsAndTTL.getMoreData()==1)
         {
             n.lock = false;
             transaction = false;
@@ -211,10 +211,10 @@
         header.destinationId = DestId;
         header.originId = OriginId;
         header.sequence = Sequence;
-        header.flagsAndTTL.ttl = 15;
+        header.flagsAndTTL.setTTL(15);
         header.type = THORPacketType::DATA;
         header.nextHopId = 0; // Default to 0
-        header.flagsAndTTL.visited = 0;
+        header.flagsAndTTL.setVisited(false);
     
         // 2. Routing Decision
         uint32_t bestHop = GetBestNextHop();
@@ -225,7 +225,7 @@
             
             // Update the HEADER with the route
             header.nextHopId = bestHop; 
-            header.flagsAndTTL.visited = 1;
+            header.flagsAndTTL.setVisited(true);
             packet.header = header; 
             packet.payload = payload;
             
@@ -249,7 +249,7 @@
         if (!Deserialize(data, outPacket)) return {};
 
 
-        if (outPacket.header.flagsAndTTL.ttl <= 1) {
+        if (outPacket.header.flagsAndTTL.getTTL() <= 1) {
             return {};
         }
 
@@ -259,7 +259,7 @@
             return {};
         }
         // 4. Decrement TTL
-        outPacket.header.flagsAndTTL.ttl -= 1;
+        outPacket.header.flagsAndTTL.setTTL(outPacket.header.flagsAndTTL.getTTL()-1);
 
         // 5. Select Best Hop (Internet -> Indirect -> Explore)
         uint32_t bestHop = GetBestNextHop();
@@ -268,7 +268,7 @@
             neighborTable[bestHop].isVisited = true;
             // 6. Forward Accordingly
             outPacket.header.nextHopId = bestHop;
-            outPacket.header.flagsAndTTL.visited = 1; // Mark path as used
+            outPacket.header.flagsAndTTL.setVisited(true); // Mark path as used
             return Serialize(outPacket); // Return bytes to send immediately
         } 
         else {
@@ -370,13 +370,12 @@
 
         // Mark the neighbor as "busy" for this transaction
         neighborTable[bestHop].isVisited = true;
-
         for (auto& packet : packetQueue) {
             // Update the routing info
             packet.header.nextHopId = bestHop;
 
             // Mark as visited so we don't loop back immediately
-            packet.header.flagsAndTTL.visited = 1;
+            packet.header.flagsAndTTL.setVisited(true);
 
             // Serialize and add to batch
             batchToSend.push_back(Serialize(packet));
