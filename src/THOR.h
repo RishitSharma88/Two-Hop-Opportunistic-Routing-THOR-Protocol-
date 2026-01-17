@@ -39,7 +39,7 @@ enum class THORPacketType : uint8_t {
 struct flags {
     uint8_t value;
 
-    // Getter/setter methods for clarity and portability
+    // Getter/setter methods for portability across compilers and machines
     uint8_t getTTL() const { return value & 0x1F; }
     void setTTL(uint8_t ttl) { value = (value & 0xE0) | (ttl & 0x1F); }
 
