@@ -6,7 +6,7 @@ Unlike standard mesh libraries that rely on battery-draining flooding or static 
 
 ## Key Engineering Features
 
-### 1. Physics-Aware Routing ("The Goldilocks Zone")
+### 1. Greedy Routing
 Most mesh protocols greedily connect to the strongest signal (e.g., RSSI -30 dBm). This results in short hops, high latency, and excessive battery usage.
 * **The Innovation:** THOR implements a **Most Forward within Radius (MFR)** heuristic.
 * **The Logic:** It actively penalizes signals that are "too strong" (>-50 dBm) to force the protocol to take longer, more efficient leaps (optimal range: -50 to -80 dBm). This minimizes the total hop count to reach the destination.
@@ -149,6 +149,24 @@ All routing stages successfully simulated.
 
 * Duplicate Packet Suppression:
   A key improvement needed in THOR is a mechanism to detect and drop duplicate packets. In dynamic or dense networks, the same packet may arrive multiple times due to mobility or overlapping transmission ranges. Without suppression, THOR may forward these duplicates repeatedly, causing unnecessary congestion, battery drain, and temporary routing loops. Future versions will incorporate a lightweight “recent packet history” that allows each node to recognize and discard previously seen packets, ensuring cleaner routing behavior and improved network stability.
+
+## Architecture Status
+
+This protocol is currently in active development. The core deterministic routing engine, MTU clamping, and memory-safe state machine are fully implemented and stable for testing. 
+
+### Implementation State
+
+**Core Engine (Stable)**
+- [x] Scoring Engine (-50dBm optimization)
+- [x] Custom 22-byte bit-packed header serialization
+- [x] Memory-bounded Store-and-Forward Queue
+- [x] MTU Clamping and hardware constraints
+
+**Pending Infrastructure**
+- [ ] Payload Fragmentation (`fragmentedHeader` structs defined; queue integration pending)
+- [ ] Transaction timeout mechanisms for dropped ACKs
+- [ ] Duplicate Packet Suppression
+      
 
 ## NOTE:
 
