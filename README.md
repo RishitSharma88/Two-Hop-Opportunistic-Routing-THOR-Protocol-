@@ -163,6 +163,8 @@ This protocol is currently in active development. The core deterministic routing
 - [x] MTU Clamping and hardware constraints
 
 **Pending Infrastructure**
+- [ ] State Machine architecture for Initiator and Acceptor states (Partially Completed)
+- [ ] 3 Different Modes of packet delivery based on the neighbour traffic density (In Progress)
 - [ ] Payload Fragmentation (`fragmentedHeader` structs defined; queue integration pending)
 - [ ] Transaction timeout mechanisms for dropped ACKs
 - [ ] Duplicate Packet Suppression
