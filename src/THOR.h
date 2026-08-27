@@ -3,12 +3,22 @@
 #ifndef THOR_H
 #define THOR_H
 #include <algorithm>
+#include <array>
+#include <cctype>
 #include <cstdint>
 #include <ctime>
+#include <fstream>
 #include <iostream>
+#include <optional>
 #include <queue>
+#include <string>
 #include <unordered_map>
+#include <variant>
 #include <vector>
+#include "fifo5.h"
+
+//**BUILD THE STATE MACHINE STRUCT**
+
 
 const uint32_t BROADCAST_ID = 0xFFFFFFFF;
 
@@ -21,7 +31,7 @@ struct THORConfig { // Configurations before running the protocol
   uint16_t attMtu;     // negotiated MTU (e.g., 185)
   uint16_t maxPayload; // computed = attMtu - attOverhead - headerSize
   uint8_t deviceType; // 0 -> Android, 1-> ESP32, Remaining bits for specialized
-                      // devices that can be compatible wiht this protocol
+                      // devices that can be compatible with this protocol
   uint16_t fragPayloadSize; // how much data per fragment (<= maxPayload)
   uint16_t maxFragments;    // safety cap to avoid memory blowup
 };
@@ -60,7 +70,7 @@ struct flags {
 //// DATA  -> continuation
 //// ACK   -> success
 //    unsigned char moreData : 1;
-//};
+// };
 struct Header {
   THORPacketType type; // 1 byte
 
@@ -89,6 +99,8 @@ struct NeighborInfo {
 static_assert(sizeof(Header) == 22,
               "Error: Header size must be exactly 22 bytes for BLE!");
 
+#define DEST_ARRAY_SIZE 10
+
 #pragma pack(push, 1)
 struct fragmentedHeader {
   uint32_t OriginId;
@@ -115,6 +127,11 @@ struct metrics {
   int indirectInternetBonus; // Base score for indirect internet
   int unvisitedBonus;        // Base score for unvisited node
   int visitedPenalty;        // Penalty score for visited node
+
+  metrics() = default;
+  metrics(int8_t lb, int8_t ub, int dirB, int indirB, int unvisB, int visP)
+      : rssiLowerBound(lb), rssiUpperBound(ub), directInternetBonus(dirB),
+        indirectInternetBonus(indirB), unvisitedBonus(unvisB), visitedPenalty(visP) {}
 };
 struct ModerateMetric : public metrics {
   using metrics::metrics;
@@ -126,20 +143,48 @@ struct Modes {
   metrics sparse{-60, -30, 500, 500, 500, 500};
 };
 
+struct Initiator_Checks
+{
+    bool InitHello{}; 
+    bool AckReceive{};
+    bool InitiateSession{};
+    bool WaitForConfirm{};
+    bool Disconnecting{};
+};
+
+struct Acceptor_Checks
+{
+    bool DiscoverHello{};
+    bool AckReceive{};
+    bool WaitForConfirm{};
+    bool Disconnecting{};
+};
+
 class THOR {
 public:
-  THORConfig cfg;
+  THORConfig cfg{};
+  OutHeader outheader{};
+  Header header{};
+  Fifo5<uint32_t> destIdQueue{16};
+  
+  bool isInitiator = false;
+  std::string currentRoleStr{};
+
+  THOR() { InitConfig(); }
   THOR(const THORConfig &c) : cfg(c) { InitConfig(); }
   void InitConfig();
+  bool ParseRoleConfig(const std::string &filename = "Config.ini");
+
+  std::array<int32_t, DEST_ARRAY_SIZE> GetDestID();
+  bool PushDestId(uint32_t destId);
   uint32_t ParseTempId();
   std::vector<uint8_t> Serialize(const Packet &packet);
   bool Deserialize(const std::vector<uint8_t> &data, Packet &outPacket);
   bool DeserializeHeader(const std::vector<uint8_t> &data, Header &outheader);
   std::vector<uint8_t> SerializeHeader(const Header &header);
-  std::vector<uint8_t> CreateHello(uint32_t DestId, uint32_t SenderId,
-                                   uint32_t OriginId, uint32_t Sequence);
+  std::vector<uint8_t> CreateHello(uint32_t DestId);
   bool HandleHello(const std::vector<uint8_t> &data);
-  std::vector<uint8_t> ACK(uint32_t MyId, bool intneighbour);
+  std::vector<uint8_t> ACK();
   bool HandleAck(const std::vector<uint8_t> &data);
   std::vector<uint8_t> SendPacket(uint32_t DestId, uint32_t SenderId,
                                   uint32_t OriginId, uint32_t Sequence,
@@ -152,7 +197,9 @@ public:
   ProcessQueue(); // Android Wrapper Endpoint Function
 
 private:
+  uint32_t mysequence(uint32_t &seq);
   uint32_t CreateTempId();
+  void push_to_Role(){};
   std::vector<uint8_t> CreateACK(uint32_t DestId, uint32_t SenderId,
                                  uint32_t OriginId, uint32_t NextHopId,
                                  uint32_t Sequence, bool intneighbour,
@@ -162,6 +209,7 @@ private:
   std::queue<OutHeader> outheaderFields;
   std::vector<Packet> packetQueue;
   uint8_t ismoredata();
+  bool set_transaction();
   bool transaction = false;
 };
 
