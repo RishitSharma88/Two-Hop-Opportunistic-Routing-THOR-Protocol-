@@ -1,11 +1,88 @@
 // Copyright 2025 Rishit Sharma
 // Licensed under the Apache License, Version 2.0
 
-# include "THOR.h"
+#include "THOR.h"
 #include <cstring>
+#include <fstream>
+#include <iostream>
+#include <algorithm>
+#include <cctype>
+
+    static std::string trimString(const std::string& s) {
+        auto start = s.find_first_not_of(" \t\r\n");
+        if (start == std::string::npos) return "";
+        auto end = s.find_last_not_of(" \t\r\n");
+        return s.substr(start, end - start + 1);
+    }
+
+    bool THOR::ParseRoleConfig(const std::string &filename)
+    {
+        std::ifstream infile(filename);
+        if (!infile.is_open()) {
+            infile.open("config.ini");
+        }
+
+        if (!infile.is_open()) {
+            std::cerr << "[THOR] Warning: Could not open config file: " << filename << std::endl;
+            isInitiator = false;
+            return isInitiator;
+        }
+
+        std::string line;
+        std::string currentSection = "";
+
+        while (std::getline(infile, line)) {
+            // Remove comments starting with ';' or '#'
+            size_t commentPos = line.find_first_of(";#");
+            if (commentPos != std::string::npos) {
+                line = line.substr(0, commentPos);
+            }
+
+            std::string trimmed = trimString(line);
+            if (trimmed.empty()) continue;
+
+            // Section header e.g. [Role]
+            if (trimmed.front() == '[' && trimmed.back() == ']') {
+                currentSection = trimString(trimmed.substr(1, trimmed.size() - 2));
+                continue;
+            }
+
+            // Key = Value e.g. Curren_Role = Initiator
+            size_t eqPos = trimmed.find('=');
+            if (eqPos != std::string::npos) {
+                std::string key = trimString(trimmed.substr(0, eqPos));
+                std::string val = trimString(trimmed.substr(eqPos + 1));
+
+                std::string keyLower = key;
+                std::transform(keyLower.begin(), keyLower.end(), keyLower.begin(), ::tolower);
+
+                if (keyLower == "curren_role" || keyLower == "current_role" || keyLower == "role") {
+                    std::string valLower = val;
+                    std::transform(valLower.begin(), valLower.end(), valLower.begin(), ::tolower);
+
+                    if (valLower == "initiator") {
+                        isInitiator = true;
+                        currentRoleStr = "Initiator";
+                        std::cout << "[THOR] Config Parser: Parsed role 'Initiator' from config. isInitiator set to true." << std::endl;
+                        return isInitiator;
+                    } else if (valLower == "acceptor") {
+                        isInitiator = false;
+                        currentRoleStr = "Acceptor";
+                        std::cout << "[THOR] Config Parser: Parsed role 'Acceptor' from config. isInitiator set to false." << std::endl;
+                        return isInitiator;
+                    }
+                }
+            }
+        }
+
+        return isInitiator;
+    }
 
     void THOR::InitConfig()
     {
+        // 1) Read Role from Config.ini and build struct object
+        ParseRoleConfig("Config.ini");
+
         // 0 = Android, 1 = ESP32
         uint16_t mtuCap = 0;
 
@@ -17,10 +94,14 @@
             mtuCap = 247; // safe upper bound for cross-device reliability
         }
 
-        // 1) Clamp MTU
+        if (cfg.attMtu == 0) {
+            cfg.attMtu = mtuCap;
+        }
+
+        // 2) Clamp MTU
         cfg.attMtu = std::min<uint16_t>(cfg.attMtu, mtuCap);
 
-        // 2) Compute max payload
+        // 3) Compute max payload
         if (cfg.attMtu <= (attOverhead + headerSize)) {
             cfg.maxPayload = 0;
             cfg.fragPayloadSize = 0;
@@ -29,14 +110,17 @@
 
         cfg.maxPayload = cfg.attMtu - attOverhead - headerSize;
 
-        // 3) Fragment payload size
+        // 4) Fragment payload size
         cfg.fragPayloadSize = cfg.maxPayload;
 
-        // 4) Safety cap
+        // 5) Safety cap
         if (cfg.maxFragments == 0) cfg.maxFragments = 32;
 
-        // 5) Compute TempId from internet state
+        // 6) Compute TempId from internet state
         cfg.TempId = CreateTempId();
+        header.senderId = cfg.TempId;
+        
+        header.sequence = 1; // Reset sequence number
     }
     uint32_t THOR::CreateTempId() //Ensure BLE device wrapper gives 0 as LSB of the PermNodeId always (Use Error checks)
     {
@@ -48,6 +132,29 @@
         {
             return cfg.PermId & ~1u ;
         }
+    }
+    
+    std::array<int32_t, DEST_ARRAY_SIZE> THOR::GetDestID()
+    {
+        std::array<int32_t, DEST_ARRAY_SIZE> destArray{};
+        destArray.fill(-1);
+
+        size_t count = 0;
+        while (count < DEST_ARRAY_SIZE) {
+            auto popper = destIdQueue.pop();
+            if (!popper) break;
+            destArray[count] = static_cast<int32_t>(*popper);
+            count++;
+        }
+        return destArray;
+    }
+
+    bool THOR::PushDestId(uint32_t destId)
+    {
+        auto pusher = destIdQueue.push();
+        if (!pusher) return false;
+        *pusher = destId;
+        return true;
     }
         
     uint32_t THOR::ParseTempId() //Return back to the permanent Id stored in the BLE device
@@ -101,17 +208,24 @@
         return true;
     }
     
-    std::vector<uint8_t> THOR::CreateHello(uint32_t DestId ,uint32_t SenderId, uint32_t OriginId, uint32_t Sequence)
+    bool THOR::set_transaction()
     {
-        if(SenderId == OriginId)
-        {Sequence = 0;}
-        Header header = {};
-
-        header.senderId = SenderId;
+        return transaction;
+    }
+    uint32_t THOR::mysequence(uint32_t &seq)
+    {
+        //check for roles and respond with appropriate sequence based on the role
+        return seq;
+    }
+    std::vector<uint8_t> THOR::CreateHello(uint32_t DestId)
+    // InitHello
+    {
+        if(header.senderId == header.originId)
+        {header.sequence = 1;}
         header.destinationId = DestId;
-        header.originId = OriginId;
+        header.originId = header.senderId;
         header.nextHopId = BROADCAST_ID; // 0xFFFFFFFF
-        header.sequence = Sequence;
+        header.sequence = mysequence(header.sequence);
         header.type = THORPacketType::HELLO;
         header.flagsAndTTL.setTTL(1);
         header.flagsAndTTL.setVisited(false);
@@ -121,7 +235,6 @@
     
     std::vector<uint8_t> THOR::CreateACK(uint32_t DestId, uint32_t SenderId,uint32_t OriginId,uint32_t NextHopId,uint32_t Sequence, bool intneighbour,bool successACK)
     {
-        Header header = {};
         header.senderId = SenderId;//My ID
         header.destinationId = DestId;
         header.originId = OriginId;
@@ -135,43 +248,42 @@
     }
     
     bool THOR::HandleHello(const std::vector<uint8_t>& data)//Endpoint call
+    // DiscoverHello
     {
-        Header outheader;
         if(!transaction)
         {
             transaction = true;
-            bool result = DeserializeHeader(data, outheader);
-            auto &n = neighborTable[outheader.senderId];
+            bool result = DeserializeHeader(data, header);
+            auto &n = neighborTable[header.senderId];
             n.lastSeen = std::time(nullptr);
             n.lock = true;
-            OutHeader oh;
-            oh.DestId = outheader.destinationId;
-            oh.OriginId = outheader.originId;
-            oh.sequence = outheader.sequence;
-            oh.SenderId = outheader.senderId;
-            outheaderFields.push(oh);
+            outheader.DestId = header.destinationId;
+            outheader.OriginId = header.originId;
+            outheader.sequence = header.sequence;
+            outheader.SenderId = header.senderId;
+            outheaderFields.push(outheader);
             return result;
         }
         else
         {return false;}
     }
     //Process hello packets to find neighbors
-    std::vector<uint8_t> THOR::ACK(uint32_t MyId,bool intneighbour)//Endpoint call
+    std::vector<uint8_t> THOR::ACK()//Endpoint call
     {
-        OutHeader oh;
-        oh = outheaderFields.front();
+        outheader = outheaderFields.front();
         outheaderFields.pop();
-        if(MyId == oh.DestId)
+        if(cfg.TempId == outheader.DestId)
         {
-            return CreateACK(oh.DestId,MyId,oh.OriginId,oh.SenderId,oh.sequence,intneighbour,1);
+            return CreateACK(outheader.DestId,cfg.TempId,outheader.OriginId,outheader.SenderId,outheader.sequence,cfg.intneighbour,1);
         }
         else
         {
-            return CreateACK(oh.DestId,MyId,oh.OriginId,oh.SenderId,oh.sequence,intneighbour,0);
+            return CreateACK(outheader.DestId,cfg.TempId,outheader.OriginId,outheader.SenderId,outheader.sequence,cfg.intneighbour,0);
         }
     }
     
     void THOR::ProcessACK(Header outheader)
+    
     {
         auto &n = neighborTable[outheader.senderId];
         if(outheader.type == THORPacketType::ACK && outheader.flagsAndTTL.getMoreData()==1)
@@ -188,12 +300,18 @@
             oh.OriginId = outheader.originId;
             oh.sequence = outheader.sequence;
             oh.SenderId = outheader.senderId;
+            if(oh.sequence%2!=0)
+            {
+                
+            }
+            //have to put sequencing logic for hasdirectinternet to check which node is it - primary/secondary
             outheaderFields.push(oh);
         }
     }
     
     //store ACKs in the queue and pop elements for single threaded function HandleAck
     bool THOR::HandleAck(const std::vector<uint8_t>& data)//Endpoint call
+    // AckReceive
     {
         Header outheader;
         bool result =  DeserializeHeader(data,outheader);
@@ -347,6 +465,15 @@
             }
         }
         return (maxScore == -1) ? 0 : bestNodeId;
+    }
+    
+    uint8_t THOR::ismoredata()
+    {
+        if(cfg.fragPayloadSize > 0)
+        {
+            return 1;
+        }
+        return 0;
     }
     
     // Returns a list of serialized packets ready to be sent via Bluetooth
