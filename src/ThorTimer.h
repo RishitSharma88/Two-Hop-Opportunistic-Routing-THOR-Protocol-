@@ -1,27 +1,6 @@
+// Copyright 2025 Rishit Sharma
+// Licensed under the Apache License, Version 2.0
 #pragma once
-// ThorTimer.h — low-latency monotonic timestamp source for the THOR layer.
-//
-// One call for all functions / all platforms:
-//   uint64_t t0 = ThorClock::nowNanos(deviceType); // deviceType = cfg.deviceType
-//   ... work ...
-//   uint64_t dt = ThorClock::nowNanos(deviceType) - t0;
-//
-// Backend selected by RUNTIME deviceType, with COMPILE-TIME guards so the
-// same THOR.cpp compiles on every target:
-//
-//   deviceType 0 (Android) : clock_gettime(CLOCK_MONOTONIC)  [ns]
-//                            == native equivalent of Java
-//                               SystemClock.elapsedRealtimeNanos()
-//   deviceType 1 (ESP32)   : esp_timer_get_time() * 1000     [us -> ns]
-//   deviceType 2 (Windows) : QueryPerformanceCounter / QPF   [<1us]
-//   deviceType 3 (macOS)   : mach_absolute_time()            [ns]
-//                            (std::chrono::steady_clock maps to it anyway)
-//   fallback / AUTO       : std::chrono::steady_clock        [ns]
-//
-// All sources are MONOTONIC (never wall-clock), so deltas are safe across
-// sleep/wake and NTP steps. Header-only, inline, no virtuals, no mutexes,
-// no allocations on the hot path.
-
 #include <cstdint>
 
 #if defined(_WIN32) || defined(_WIN64)
