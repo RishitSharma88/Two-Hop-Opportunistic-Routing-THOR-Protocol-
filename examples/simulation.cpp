@@ -1,8 +1,5 @@
 /*
  * THOR smoke validation (SIMULATION ONLY).
- * Matches CURRENT THOR.h public API. THOR.h/.cpp, Roles.h,
- * State_Machine.h are untouched.
- *
  * Validates:
  *  - TempId LSB encoding, Serialize/Deserialize roundtrip
  *  - HELLO -> HandleHello -> ACK -> HandleAck handshake
