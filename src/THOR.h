@@ -16,6 +16,7 @@
 #include <variant>
 #include <vector>
 #include "fifo5.h"
+#include "ThorTimer.h"
 
 //**BUILD THE STATE MACHINE STRUCT**
 
@@ -120,6 +121,12 @@ struct OutHeader {
   uint32_t OriginId;
   uint32_t sequence;
 };
+// Inbound slot filled by the JNI/Android wrapper (SPSC: wrapper = producer,
+// THOR::PacketHandler = consumer). Fixed-size POD so it is safe in Fifo5.
+struct RxSlot {
+  uint8_t data[256];
+  uint16_t len = 0;
+};
 struct metrics {
   int8_t rssiLowerBound;     // base score
   int8_t rssiUpperBound;     // base score
@@ -160,12 +167,26 @@ struct Acceptor_Checks
     bool Disconnecting{};
 };
 
+enum class ErrorCode : uint8_t
+{
+    
+};
+
+#pragma pack(push, 1)
+struct BleErrorPacket {
+    uint8_t  packetType;   // E.g., 0xFF for Error packets
+    uint8_t  errorDomain;  // E.g., 0x02 for Android GATT
+    uint16_t errorCode;    // 2-byte Android error code (Big-Endian)
+};
+#pragma pack(pop)
+
 class THOR {
 public:
   THORConfig cfg{};
   OutHeader outheader{};
   Header header{};
   Fifo5<uint32_t> destIdQueue{16};
+  Fifo5<RxSlot> rxQueue{64};
   
   bool isInitiator = false;
   std::string currentRoleStr{};
@@ -182,7 +203,7 @@ public:
   bool Deserialize(const std::vector<uint8_t> &data, Packet &outPacket);
   bool DeserializeHeader(const std::vector<uint8_t> &data, Header &outheader);
   std::vector<uint8_t> SerializeHeader(const Header &header);
-  std::vector<uint8_t> CreateHello(uint32_t DestId);
+  std::vector<uint8_t> CreateHello();
   bool HandleHello(const std::vector<uint8_t> &data);
   std::vector<uint8_t> ACK();
   bool HandleAck(const std::vector<uint8_t> &data);
@@ -195,6 +216,10 @@ public:
   uint32_t GetBestNextHop();
   std::vector<std::vector<uint8_t>>
   ProcessQueue(); // Android Wrapper Endpoint Function
+  void PacketHandler();
+  bool HelloStateHandler();
+  bool AckStateHandler();
+  bool DataStateHandler();
 
 private:
   uint32_t mysequence(uint32_t &seq);
@@ -211,6 +236,9 @@ private:
   uint8_t ismoredata();
   bool set_transaction();
   bool transaction = false;
+  static constexpr uint64_t kStateTimeoutNanos = 30ULL * 1000000000ULL;
+  uint64_t helloStateStartNanos_ = 0;
+  uint64_t ackStateStartNanos_ = 0;
 };
 
 #endif /* THOR_H */
