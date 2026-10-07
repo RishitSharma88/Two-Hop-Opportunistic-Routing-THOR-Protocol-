@@ -2,7 +2,6 @@
 #include "THOR.h"
 
 enum class Roles : uint8_t { Initiator = 1, Acceptor = 2 };
-
 enum class States : uint8_t 
 {
   InitHello = 1,       // Initiator
@@ -73,11 +72,42 @@ public:
     return state;
   }
 
-private:
-  bool CheckInitHello() { return true; } // check for the best Ack and transition to next phase within 20 seconds
-  bool CheckDiscoverHello() { return true; } // Send the Hello packets with sequence
-  bool CheckAckReceive() { return true; }
-  bool CheckInitiateSession() { return true; }
-  bool CheckWaitForConfirm() { return true; }
-  bool CheckDisconnecting() { return true; }
+  
+bool CheckInitHello(bool res) {
+    if (res) { return true; } else { return false; }
+}
+
+bool CheckDiscoverHello(bool res) {
+    if (res) { return true; } else { return false; }
+}
+
+bool CheckAckReceive(bool res) {
+    if (res) { return true; } else { return false; }
+}
+
+bool CheckInitiateSession(bool res) {
+    if (res) { return true; } else { return false; }
+}
+
+bool CheckWaitForConfirm(bool res) {
+    if (res) { return true; } else { return false; }
+}
+
+bool CheckDisconnecting(bool res) {
+    if (res) { return true; } else { return false; }
+}
+
+bool result;
+
+// check for the best Ack and transition to next phase within 20 seconds
+result = CheckInitHello(someBooleanValue); 
+
+// Send the Hello packets with sequence
+result = CheckDiscoverHello(someBooleanValue); 
+
+result = CheckAckReceive(someBooleanValue);
+result = CheckInitiateSession(someBooleanValue);
+result = CheckWaitForConfirm(someBooleanValue);
+result = CheckDisconnecting(someBooleanValue);
+
 };
