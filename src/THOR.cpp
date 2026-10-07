@@ -217,12 +217,12 @@
         //check for roles and respond with appropriate sequence based on the role
         return seq;
     }
-    std::vector<uint8_t> THOR::CreateHello(uint32_t DestId)
+    std::vector<uint8_t> THOR::CreateHello()
     // InitHello
     {
         if(header.senderId == header.originId)
         {header.sequence = 1;}
-        header.destinationId = DestId;
+        header.destinationId = 0;
         header.originId = header.senderId;
         header.nextHopId = BROADCAST_ID; // 0xFFFFFFFF
         header.sequence = mysequence(header.sequence);
@@ -513,3 +513,48 @@
 
         return batchToSend;
     }
+
+    // Endpoint for JNI Wrapper to Push contents into the queue
+    void THOR::PacketHandler()
+    {
+        auto popper = rxQueue.pop();
+        if (!popper) return;
+        Header* hdr = reinterpret_cast<Header*>(popper->data);
+        THORPacketType type = hdr->type;
+        (void)type;
+	if(type == THORPacketType::HELLO)
+	{
+		HelloStateHandler();
+	}
+	else if(type == THORPacketType::ACK)
+	{
+		AckStateHandler();
+	}
+	else if(type == THORPacketType::DATA)
+	{
+		DataStateHandler();
+	}
+
+    }
+
+    bool THOR::HelloStateHandler()
+    {
+        uint64_t now = ThorClock::nowNanos(cfg.deviceType);
+        if (helloStateStartNanos_ == 0) helloStateStartNanos_ = now;
+        if (now - helloStateStartNanos_ >= kStateTimeoutNanos) return false;
+        return true;
+    }
+
+    bool THOR::AckStateHandler()
+    {
+        uint64_t now = ThorClock::nowNanos(cfg.deviceType);
+        if (ackStateStartNanos_ == 0) ackStateStartNanos_ = now;
+        if (now - ackStateStartNanos_ >= kStateTimeoutNanos) return false;
+        return true;
+    }
+
+    bool THOR::DataStateHandler()
+    {
+        return true;
+    }
+
