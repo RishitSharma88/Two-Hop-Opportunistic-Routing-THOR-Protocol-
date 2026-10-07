@@ -11,7 +11,6 @@ namespace StateMachine
     public:
         std::array<int32_t, DEST_ARRAY_SIZE> destArray{};
         THOR thor{};
-
         // Both check objects initialized
         Initiator_Checks initiatorChecks{};
         Acceptor_Checks acceptorChecks{};
@@ -26,24 +25,24 @@ namespace StateMachine
             InitMachine();
             if(thor.isInitiator)
             {
-                if(InitHelloStage())
+                if(!InitHelloStage())
                 {
-                    return true;
+                    State_Role::CheckInitHello(false);
+		    return false;
                 }
-                return false;
+		State_Role::CheckInitHello(true);
+		
+		//Next set of if statements for next stages checks 
+                
             }
-        }
+	}
 
         bool InitHelloStage()
         {
-            if (thor.isInitiator)
-            {
-                return initiatorChecks.InitHello;
-            }
-            else
-            {
-                return acceptorChecks.DiscoverHello;
-            }
+         	thor.CreateHello();
+		//make a function to receive the confirmation of broadcast from android layer
         }
+    private:
+        
     };
 }
