@@ -48,7 +48,7 @@ enum class THORPacketType : uint8_t { HELLO = 1, ACK = 2, DATA = 3 };
 struct flags {
   uint8_t value;
 
-  // Getter/setter methods for clarity and portability
+  // Getter/setter methods
   uint8_t getTTL() const { return value & 0x1F; }
   void setTTL(uint8_t ttl) { value = (value & 0xE0) | (ttl & 0x1F); }
 
@@ -122,7 +122,7 @@ struct OutHeader {
   uint32_t sequence;
 };
 // Inbound slot filled by the JNI/Android wrapper (SPSC: wrapper = producer,
-// THOR::PacketHandler = consumer). Fixed-size POD so it is safe in Fifo5.
+// THOR::PacketHandler = consumer).
 struct RxSlot {
   uint8_t data[256];
   uint16_t len = 0;
@@ -174,8 +174,8 @@ enum class ErrorCode : uint8_t
 
 #pragma pack(push, 1)
 struct BleErrorPacket {
-    uint8_t  packetType;   // E.g., 0xFF for Error packets
-    uint8_t  errorDomain;  // E.g., 0x02 for Android GATT
+    uint8_t  packetType;   // E.g. 0xFF for Error packets
+    uint8_t  errorDomain;  // E.g. 0x02 for Android GATT
     uint16_t errorCode;    // 2-byte Android error code (Big-Endian)
 };
 #pragma pack(pop)
